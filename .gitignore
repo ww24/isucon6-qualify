@@ -1,0 +1,9 @@
+.*
+
+# mariadb
+local/mysqldir/*
+
+# go
+
+!.gitignore
+!.gitkeep

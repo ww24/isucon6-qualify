@@ -1,0 +1,128 @@
+box: golang:1.7
+
+# BUILD
+build:
+  steps:
+    - setup-go-workspace
+
+    - script:
+      name: set working directory
+      code: |
+        export WERCKER_SOURCE_DIR=$WERCKER_SOURCE_DIR/go
+
+    - script:
+      name: go get
+      code: |
+        go get -d
+
+    - script:
+      name: go build
+      code: |
+        go build -o app
+
+    - script:
+      name: copy artifacts
+      code: |
+        cp -Ra ../ $WERCKER_OUTPUT_DIR
+
+  after-steps:
+    # failure notification
+    - slack-notifier:
+      url: $SLACK_WEB_HOOK
+      channel: notify
+      username: ram
+      icon_url: $SLACK_ICON_URL_RAM
+      notify_on: failed
+
+# CREATE PR FOR DEPLOY
+create-pull-request:
+  steps:
+    - script:
+      name: create pull request
+      code: |
+        payload="{
+          \"title\": \"Pull Request for Deployment\",
+          \"body\": \"Check and merge!\",
+          \"head\": \"$WERCKER_GIT_BRANCH\",
+          \"base\": \"master\"
+        }";
+
+        # TODO: jq などを使って response の JSON を処理した方が丁寧
+        status_code=$(curl -s -S -w "%{http_code}\n" -o /dev/null -X POST https://api.github.com/repos/$WERCKER_GIT_OWNER/$WERCKER_GIT_REPOSITORY/pulls \
+          -A "wercker-create-pull-request" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$payload");
+
+        if [ $status_code -lt 400 ]; then
+          echo "Success!";
+        elif [ $status_code = 422 ]; then
+          echo "Failed to create Pull Request.";
+          echo "Maybe, already created.";
+        else
+          echo "Failed."
+          echo "HTTP status code: $status_code";
+          exit 1;
+        fi
+
+  after-steps:
+    # failure notification
+    - slack-notifier:
+      url: $SLACK_WEB_HOOK
+      channel: notify
+      username: ram
+      icon_url: $SLACK_ICON_URL_RAM
+      notify_on: failed
+
+# DEPLOY
+deploy:
+  steps:
+    - install-packages:
+        packages: rsync
+
+    - add-ssh-key:
+      keyname: ISUCON_KEY
+      host: $ISUCON_HOST
+
+    - script:
+      name: add host key
+      code: |
+        ssh-keyscan -H $ISUCON_HOST >> ~/.ssh/known_hosts
+
+    - sjoerdmulder/rsync-deploy@0.1.0:
+      host: $ISUCON_HOST
+      user: isucon
+      directory: /home/isucon/webapp
+
+    - script:
+      name: restart nginx
+      code: |
+        ssh isucon@$ISUCON_HOST sudo systemctl restart nginx
+
+    - script:
+      name: restart mysql
+      code: |
+        ssh isucon@$ISUCON_HOST sudo systemctl restart mysql
+
+    # FIXME
+    # - script:
+    #   name: restart webapp
+    #   code: |
+    #     ssh isucon@$ISUCON_HOST sudo systemctl restart isuxi.go
+
+    # success notification
+    - slack-notifier:
+      url: $SLACK_WEB_HOOK
+      channel: notify
+      username: rem
+      icon_url: $SLACK_ICON_URL_REM
+
+  after-steps:
+    # failure notification
+    - slack-notifier:
+      url: $SLACK_WEB_HOOK
+      channel: notify
+      username: ram
+      icon_url: $SLACK_ICON_URL_RAM
+      notify_on: failed
