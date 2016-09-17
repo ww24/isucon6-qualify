@@ -1,9 +1,6 @@
 ISUCON5 Qualify
 ===
-
-wercker
----
-https://app.wercker.com/yudetomato/isucon6-qualify/
+[![wercker status](https://app.wercker.com/status/90b871de364e62e1b0aea9fa90608958/m/master "wercker status")](https://app.wercker.com/project/byKey/90b871de364e62e1b0aea9fa90608958)
 
 local
 ---
