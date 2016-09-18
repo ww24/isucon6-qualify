@@ -32,7 +32,8 @@ services:
     command: go run isutar.go type.go util.go
     links:
       - mysql
-      - isuda
+      # FIXME: Circular dependency
+      # - isuda
     ports:
       - "5001:5001"
     environment:
