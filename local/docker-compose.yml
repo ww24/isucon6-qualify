@@ -1,7 +1,7 @@
 version: '2'
 services:
   mysql:
-    image: mysql:5.7.15
+    image: mysql:5.7
     command: mysqld_safe --skip-grant-tables
     ports:
       - "13306:3306"

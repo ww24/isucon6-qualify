@@ -15,6 +15,7 @@ import (
 	_ "net/http/pprof"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -331,15 +332,16 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string, rows *sql.R
 		entries = append(entries, &e)
 	}
 
-	kw2sha := make(map[string]string)
+	keywords := make([]string, 0, 500)
 	for _, entry := range entries {
-		keyword := entry.Keyword
-		if _, ok := kw2sha[keyword]; !ok {
-			kw2sha[keyword] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(keyword)))
-		}
-		content = strings.Join(strings.Split(content, keyword), kw2sha[keyword])
+		keywords = append(keywords, regexp.QuoteMeta(entry.Keyword))
 	}
-
+	re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
+	kw2sha := make(map[string]string)
+	content = re.ReplaceAllStringFunc(content, func(kw string) string {
+		kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
+		return kw2sha[kw]
+	})
 	content = html.EscapeString(content)
 	for kw, hash := range kw2sha {
 		u, err := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(kw))
