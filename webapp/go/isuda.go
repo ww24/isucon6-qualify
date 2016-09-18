@@ -32,7 +32,6 @@ const (
 )
 
 var (
-	isutarEndpoint string
 	isupamEndpoint string
 
 	baseUrl *url.URL
@@ -76,9 +75,8 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := db.Exec(`DELETE FROM entry WHERE id > 7101`)
 	panicIf(err)
 
-	resp, err := http.Get(fmt.Sprintf("%s/initialize", isutarEndpoint))
+	_, err = db.Exec("TRUNCATE star")
 	panicIf(err)
-	defer resp.Body.Close()
 
 	re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
 }
@@ -349,19 +347,24 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string, re *regexp.
 	return strings.Replace(content, "\n", "<br />\n", -1)
 }
 
-func loadStars(keyword string) []*Star {
-	v := url.Values{}
-	v.Set("keyword", keyword)
-	resp, err := http.Get(fmt.Sprintf("%s/stars", isutarEndpoint) + "?" + v.Encode())
-	panicIf(err)
-	defer resp.Body.Close()
+func loadStars(keyword string) (stars []*Star) {
+	stars = make([]*Star, 0, 10)
 
-	var data struct {
-		Result []*Star `json:result`
+	rows, err := db.Query(`SELECT * FROM star WHERE keyword = ?`, keyword)
+	if err != nil && err != sql.ErrNoRows {
+		panicIf(err)
+		return
 	}
-	err = json.NewDecoder(resp.Body).Decode(&data)
-	panicIf(err)
-	return data.Result
+
+	for rows.Next() {
+		s := Star{}
+		err := rows.Scan(&s.ID, &s.Keyword, &s.UserName, &s.CreatedAt)
+		panicIf(err)
+		stars = append(stars, &s)
+	}
+	rows.Close()
+
+	return stars
 }
 
 func isSpamContents(content string) bool {
@@ -430,13 +433,12 @@ func main() {
 	db.Exec("SET SESSION sql_mode='TRADITIONAL,NO_AUTO_VALUE_ON_ZERO,ONLY_FULL_GROUP_BY'")
 	db.Exec("SET NAMES utf8mb4")
 
+	// migration
+	db.Exec("CREATE TABLE IF NOT EXISTS isuda.star LIKE isutar.star")
+
 	prepareEntryPager, err = db.Prepare("SELECT * FROM entry ORDER BY updated_at DESC LIMIT ? OFFSET ?")
 	panicIf(err)
 
-	isutarEndpoint = os.Getenv("ISUTAR_ORIGIN")
-	if isutarEndpoint == "" {
-		isutarEndpoint = "http://localhost:5001"
-	}
 	isupamEndpoint = os.Getenv("ISUPAM_ORIGIN")
 	if isupamEndpoint == "" {
 		isupamEndpoint = "http://localhost:5050"
