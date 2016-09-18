@@ -332,7 +332,9 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string, rows *sql.R
 	re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
 	kw2sha := make(map[string]string)
 	content = re.ReplaceAllStringFunc(content, func(kw string) string {
-		kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
+		if _, ok := kw2sha[kw]; !ok {
+			kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
+		}
 		return kw2sha[kw]
 	})
 	content = html.EscapeString(content)
