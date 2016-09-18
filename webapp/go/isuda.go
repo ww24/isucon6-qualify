@@ -94,27 +94,20 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	page, _ := strconv.Atoi(p)
 
-	rows, err := db.Query(fmt.Sprintf(
-		"SELECT * FROM entry ORDER BY updated_at DESC LIMIT %d OFFSET %d",
-		perPage, perPage*(page-1),
-	))
+	rows, err := db.Query("SELECT * FROM entry ORDER BY updated_at DESC LIMIT ? OFFSET ?", perPage, perPage*(page-1))
 	if err != nil && err != sql.ErrNoRows {
 		panicIf(err)
 	}
 	defer rows.Close()
 
-	kwRows, err := db.Query(`
-		SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
-	`)
-	panicIf(err)
-	defer kwRows.Close()
+	keywords := getKeywords()
 
 	entries := make([]*Entry, 0, 10)
 	for rows.Next() {
 		e := Entry{}
 		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
-		e.Html = htmlify(w, r, e.Description, kwRows)
+		e.Html = htmlify(w, r, e.Description, keywords)
 		e.Stars = loadStars(e.Keyword)
 		entries = append(entries, &e)
 	}
@@ -271,13 +264,7 @@ func keywordByKeywordHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kwRows, err := db.Query(`
-		SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
-	`)
-	panicIf(err)
-	defer kwRows.Close()
-
-	e.Html = htmlify(w, r, e.Description, kwRows)
+	e.Html = htmlify(w, r, e.Description, getKeywords())
 	e.Stars = loadStars(e.Keyword)
 
 	re.HTML(w, http.StatusOK, "keyword", struct {
@@ -319,27 +306,34 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func htmlify(w http.ResponseWriter, r *http.Request, content string, rows *sql.Rows) string {
+func getKeywords() (keywords []string) {
+	rows, err := db.Query("SELECT keyword FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC")
+	panicIf(err)
+	defer rows.Close()
+
+	keywords = make([]string, 0, 500)
+	for rows.Next() {
+		var keyword string
+		err := rows.Scan(&keyword)
+		panicIf(err)
+		keywords = append(keywords, regexp.QuoteMeta(keyword))
+	}
+
+	return
+}
+
+func htmlify(w http.ResponseWriter, r *http.Request, content string, keywords []string) string {
 	if content == "" {
 		return ""
 	}
 
-	entries := make([]*Entry, 0, 500)
-	for rows.Next() {
-		e := Entry{}
-		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-		panicIf(err)
-		entries = append(entries, &e)
-	}
-
-	keywords := make([]string, 0, 500)
-	for _, entry := range entries {
-		keywords = append(keywords, regexp.QuoteMeta(entry.Keyword))
-	}
 	re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
+
 	kw2sha := make(map[string]string)
 	content = re.ReplaceAllStringFunc(content, func(kw string) string {
-		kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
+		if _, ok := kw2sha[kw]; !ok {
+			kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
+		}
 		return kw2sha[kw]
 	})
 	content = html.EscapeString(content)
