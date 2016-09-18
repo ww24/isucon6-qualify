@@ -100,16 +100,23 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil && err != sql.ErrNoRows {
 		panicIf(err)
 	}
+	defer rows.Close()
+
+	kwRows, err := db.Query(`
+		SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
+	`)
+	panicIf(err)
+	defer kwRows.Close()
+
 	entries := make([]*Entry, 0, 10)
 	for rows.Next() {
 		e := Entry{}
 		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
-		e.Html = htmlify(w, r, e.Description)
+		e.Html = htmlify(w, r, e.Description, kwRows)
 		e.Stars = loadStars(e.Keyword)
 		entries = append(entries, &e)
 	}
-	rows.Close()
 
 	var totalEntries int
 	row := db.QueryRow(`SELECT COUNT(*) FROM entry`)
@@ -262,7 +269,14 @@ func keywordByKeywordHandler(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
-	e.Html = htmlify(w, r, e.Description)
+
+	kwRows, err := db.Query(`
+		SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
+	`)
+	panicIf(err)
+	defer kwRows.Close()
+
+	e.Html = htmlify(w, r, e.Description, kwRows)
 	e.Stars = loadStars(e.Keyword)
 
 	re.HTML(w, http.StatusOK, "keyword", struct {
@@ -304,14 +318,11 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
+func htmlify(w http.ResponseWriter, r *http.Request, content string, rows *sql.Rows) string {
 	if content == "" {
 		return ""
 	}
-	rows, err := db.Query(`
-		SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
-	`)
-	panicIf(err)
+
 	entries := make([]*Entry, 0, 500)
 	for rows.Next() {
 		e := Entry{}
@@ -319,7 +330,6 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 		panicIf(err)
 		entries = append(entries, &e)
 	}
-	rows.Close()
 
 	kw2sha := make(map[string]string)
 	for _, entry := range entries {
