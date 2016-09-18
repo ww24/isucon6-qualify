@@ -80,20 +80,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read DB port number from an environment variable ISUTAR_DB_PORT.\nError: %s", err.Error())
 	}
-	/*
-		user := os.Getenv("ISUTAR_DB_USER")
-		if user == "" {
-			user = "root"
-		}
-		password := os.Getenv("ISUTAR_DB_PASSWORD")
-		dbname := os.Getenv("ISUTAR_DB_NAME")
-		if dbname == "" {
-			dbname = "isutar"
-		}
-	*/
-	user := "isuda"
-	password := "isucon"
-	dbname := "isuda"
+	user := os.Getenv("ISUTAR_DB_USER")
+	if user == "" {
+		user = "root"
+	}
+	password := os.Getenv("ISUTAR_DB_PASSWORD")
+	dbname := os.Getenv("ISUTAR_DB_NAME")
+	if dbname == "" {
+		dbname = "isuda"
+	}
 
 	db, err = sql.Open("mysql", fmt.Sprintf(
 		"%s:%s@tcp(%s:%d)/%s?loc=Local&parseTime=true",
