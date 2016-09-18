@@ -17,6 +17,8 @@ tar xzvf mysqldir.tar.gz
 
 `local/mysqldir/var/lib/mysql` というディレクトリ構成になれば正しい。
 
+※追記: MySQL のデータを `local/mysqldir/mysqldir.tar.gz` に置いておいたので、展開して __MySQL 5.7.15__ で読むと動きます。
+
 ### 依存解決 (build)
 ```
 cd webapp/go
