@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -342,11 +343,9 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string, re *regexp.
 	}
 
 	kw2sha := make(map[string]string)
-	counter := 0
 	content = re.ReplaceAllStringFunc(content, func(kw string) string {
 		if _, ok := kw2sha[kw]; !ok {
-			kw2sha[kw] = "isuda_" + strconv.Itoa(counter)
-			counter++
+			kw2sha[kw] = "isuda_" + base64.StdEncoding.EncodeToString([]byte(kw)) + "_adusi"
 		}
 		return kw2sha[kw]
 	})
