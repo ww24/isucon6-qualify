@@ -16,3 +16,25 @@ tar xzvf mysqldir.tar.gz
 ```
 
 `local/mysqldir/var/lib/mysql` というディレクトリ構成になれば正しい。
+
+### 依存解決 (build)
+```
+cd webapp/go
+GOPATH=$(pwd) make all
+```
+
+### つくる
+```
+cd local
+docker-compose up
+```
+
+open http://localhost:5000/
+
+profiler: http://localhost:5000/debug/pprof/
+
+### こわす
+```
+docker-compose stop
+docker-compose rm -f
+```
