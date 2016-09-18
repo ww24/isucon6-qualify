@@ -41,6 +41,8 @@ var (
 	store   *sessions.CookieStore
 
 	errInvalidUser = errors.New("Invalid User")
+
+	prepareEntryPager *sql.Stmt
 )
 
 func setName(w http.ResponseWriter, r *http.Request) error {
@@ -94,20 +96,21 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	page, _ := strconv.Atoi(p)
 
-	rows, err := db.Query("SELECT * FROM entry ORDER BY updated_at DESC LIMIT ? OFFSET ?", perPage, perPage*(page-1))
+	rows, err := prepareEntryPager.Query(perPage, perPage*(page-1))
 	if err != nil && err != sql.ErrNoRows {
 		panicIf(err)
 	}
 	defer rows.Close()
 
 	keywords := getKeywords()
+	regex := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
 
 	entries := make([]*Entry, 0, 10)
 	for rows.Next() {
 		e := Entry{}
 		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
-		e.Html = htmlify(w, r, e.Description, keywords)
+		e.Html = htmlify(w, r, e.Description, regex)
 		e.Stars = loadStars(e.Keyword)
 		entries = append(entries, &e)
 	}
@@ -264,7 +267,9 @@ func keywordByKeywordHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	e.Html = htmlify(w, r, e.Description, getKeywords())
+	keywords := getKeywords()
+	regex := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
+	e.Html = htmlify(w, r, e.Description, regex)
 	e.Stars = loadStars(e.Keyword)
 
 	re.HTML(w, http.StatusOK, "keyword", struct {
@@ -322,12 +327,10 @@ func getKeywords() (keywords []string) {
 	return
 }
 
-func htmlify(w http.ResponseWriter, r *http.Request, content string, keywords []string) string {
+func htmlify(w http.ResponseWriter, r *http.Request, content string, re *regexp.Regexp) string {
 	if content == "" {
 		return ""
 	}
-
-	re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
 
 	kw2sha := make(map[string]string)
 	content = re.ReplaceAllStringFunc(content, func(kw string) string {
@@ -426,6 +429,9 @@ func main() {
 	}
 	db.Exec("SET SESSION sql_mode='TRADITIONAL,NO_AUTO_VALUE_ON_ZERO,ONLY_FULL_GROUP_BY'")
 	db.Exec("SET NAMES utf8mb4")
+
+	prepareEntryPager, err = db.Prepare("SELECT * FROM entry ORDER BY updated_at DESC LIMIT ? OFFSET ?")
+	panicIf(err)
 
 	isutarEndpoint = os.Getenv("ISUTAR_ORIGIN")
 	if isutarEndpoint == "" {
