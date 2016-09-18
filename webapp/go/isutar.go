@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"os"
 	"strconv"
@@ -108,6 +109,9 @@ func main() {
 	re = render.New(render.Options{Directory: "dummy"})
 
 	r := mux.NewRouter()
+	// pprof
+	r.PathPrefix("/debug_isutar").Handler(http.DefaultServeMux)
+
 	r.HandleFunc("/initialize", myHandler(initializeHandler))
 	s := r.PathPrefix("/stars").Subrouter()
 	s.Methods("GET").HandlerFunc(myHandler(starsHandler))
