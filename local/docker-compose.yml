@@ -32,6 +32,7 @@ services:
     command: go run isutar.go type.go util.go
     links:
       - mysql
+      - isuda
     ports:
       - "5001:5001"
     environment:
@@ -39,6 +40,7 @@ services:
       - ISUTAR_DB_HOST=mysql
       - ISUTAR_DB_USER=isucon
       - ISUTAR_DB_PASSWORD=isucon
+      - ISUDA_ORIGIN=http://isuda:5000
     volumes:
       - ../:/isucon
   isupam:
@@ -49,3 +51,5 @@ services:
       - "5050:5050"
     volumes:
       - ../:/isucon
+
+# FIXME: nginx を挟む
