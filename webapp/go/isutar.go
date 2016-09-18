@@ -52,16 +52,10 @@ func starsHandler(w http.ResponseWriter, r *http.Request) {
 func starsPostHandler(w http.ResponseWriter, r *http.Request) {
 	keyword := r.FormValue("keyword")
 
-	origin := os.Getenv("ISUDA_ORIGIN")
-	if origin == "" {
-		origin = "http://localhost:5000"
-	}
-	u, err := r.URL.Parse(fmt.Sprintf("%s/keyword/%s", origin, pathURIEscape(keyword)))
-	panicIf(err)
-	resp, err := http.Get(u.String())
-	panicIf(err)
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	row := db.QueryRow(`SELECT id FROM entry WHERE keyword = ? LIMIT 1`, keyword)
+	e := Entry{}
+	err := row.Scan(&e.ID)
+	if err == sql.ErrNoRows {
 		notFound(w)
 		return
 	}
@@ -93,7 +87,7 @@ func main() {
 	password := os.Getenv("ISUTAR_DB_PASSWORD")
 	dbname := os.Getenv("ISUTAR_DB_NAME")
 	if dbname == "" {
-		dbname = "isutar"
+		dbname = "isuda"
 	}
 
 	db, err = sql.Open("mysql", fmt.Sprintf(
