@@ -4,6 +4,10 @@
 local/mysqldir/*
 
 # go
+webapp/go/pkg
+webapp/go/src
+webapp/go/isuda
+webapp/go/isutar
 
 !.gitignore
 !.gitkeep

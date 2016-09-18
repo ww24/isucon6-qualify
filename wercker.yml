@@ -8,7 +8,7 @@ build:
     - script:
       name: set working directory
       code: |
-        export WERCKER_SOURCE_DIR=$WERCKER_SOURCE_DIR/go
+        export WERCKER_SOURCE_DIR=$WERCKER_SOURCE_DIR/go/webapp
 
     - script:
       name: go get
@@ -105,11 +105,10 @@ deploy:
       code: |
         ssh isucon@$ISUCON_HOST sudo systemctl restart mysql
 
-    # FIXME
-    # - script:
-    #   name: restart webapp
-    #   code: |
-    #     ssh isucon@$ISUCON_HOST sudo systemctl restart isuxi.go
+    - script:
+      name: restart webapp
+      code: |
+        ssh isucon@$ISUCON_HOST sudo systemctl restart isuda.go && sudo systemctl restart isutar.go
 
     # success notification
     - slack-notifier:
