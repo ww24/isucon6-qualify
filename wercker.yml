@@ -97,6 +97,11 @@ deploy:
       code: |
         ssh-keyscan -H $ISUCON_HOST >> ~/.ssh/known_hosts
 
+    - script:
+      name: get working directory
+      code: |
+        echo "WERCKER_SOURCE_DIR=$WERCKER_SOURCE_DIR"
+
     - sjoerdmulder/rsync-deploy@0.1.0:
       host: $ISUCON_HOST
       user: isucon
@@ -115,7 +120,8 @@ deploy:
     - script:
       name: restart webapp
       code: |
-        ssh isucon@$ISUCON_HOST sudo systemctl restart isuda.go && sudo systemctl restart isutar.go
+        ssh isucon@$ISUCON_HOST sudo systemctl restart isuda.go
+        ssh isucon@$ISUCON_HOST sudo systemctl restart isutar.go
 
     # success notification
     - slack-notifier:
