@@ -104,13 +104,24 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	regex := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
 
 	entries := make([]*Entry, 0, 10)
+
+	entryChs := make([]chan Entry, 0, 10)
 	for rows.Next() {
+		entryCh := make(chan Entry, 1)
 		e := Entry{}
-		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+		err = rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
-		e.Html = htmlify(w, r, e.Description, regex)
-		e.Stars = loadStars(e.Keyword)
-		entries = append(entries, &e)
+		go func() {
+			e.Html = htmlify(w, r, e.Description, regex)
+			e.Stars = loadStars(e.Keyword)
+			entryCh <- e
+		}()
+		entryChs = append(entryChs, entryCh)
+	}
+
+	for _, entryCh := range entryChs {
+		entry := <-entryCh
+		entries = append(entries, &entry)
 	}
 
 	var totalEntries int
@@ -331,15 +342,18 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string, re *regexp.
 	}
 
 	kw2sha := make(map[string]string)
+	counter := 0
 	content = re.ReplaceAllStringFunc(content, func(kw string) string {
 		if _, ok := kw2sha[kw]; !ok {
-			kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
+			kw2sha[kw] = "isuda_" + strconv.Itoa(counter)
+			counter++
 		}
 		return kw2sha[kw]
 	})
 	content = html.EscapeString(content)
+	base := baseUrl.String() + "/keyword/"
 	for kw, hash := range kw2sha {
-		u, err := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(kw))
+		u, err := r.URL.Parse(base + pathURIEscape(kw))
 		panicIf(err)
 		link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(kw))
 		content = strings.Replace(content, hash, link, -1)
