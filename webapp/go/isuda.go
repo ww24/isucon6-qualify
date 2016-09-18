@@ -350,7 +350,6 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string, re *regexp.
 func loadStars(keyword string) (stars []*Star) {
 	stars = make([]*Star, 0, 10)
 
-	// migration: "create table isuda.star like isutar.star"
 	rows, err := db.Query(`SELECT * FROM star WHERE keyword = ?`, keyword)
 	if err != nil && err != sql.ErrNoRows {
 		panicIf(err)
@@ -433,6 +432,9 @@ func main() {
 	}
 	db.Exec("SET SESSION sql_mode='TRADITIONAL,NO_AUTO_VALUE_ON_ZERO,ONLY_FULL_GROUP_BY'")
 	db.Exec("SET NAMES utf8mb4")
+
+	// migration
+	db.Exec("CREATE TABLE IF NOT EXISTS isuda.star LIKE isutar.star")
 
 	prepareEntryPager, err = db.Prepare("SELECT * FROM entry ORDER BY updated_at DESC LIMIT ? OFFSET ?")
 	panicIf(err)
