@@ -12,6 +12,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"os"
 	"regexp"
@@ -325,7 +326,7 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	for _, entry := range entries {
 		keywords = append(keywords, regexp.QuoteMeta(entry.Keyword))
 	}
-	re := regexp.MustCompile("("+strings.Join(keywords, "|")+")")
+	re := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
 	kw2sha := make(map[string]string)
 	content = re.ReplaceAllStringFunc(content, func(kw string) string {
 		kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
@@ -333,7 +334,7 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	})
 	content = html.EscapeString(content)
 	for kw, hash := range kw2sha {
-		u, err := r.URL.Parse(baseUrl.String()+"/keyword/" + pathURIEscape(kw))
+		u, err := r.URL.Parse(baseUrl.String() + "/keyword/" + pathURIEscape(kw))
 		panicIf(err)
 		link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(kw))
 		content = strings.Replace(content, hash, link, -1)
@@ -456,6 +457,9 @@ func main() {
 	})
 
 	r := mux.NewRouter()
+	// pprof
+	r.PathPrefix("/debug").Handler(http.DefaultServeMux)
+
 	r.HandleFunc("/", myHandler(topHandler))
 	r.HandleFunc("/initialize", myHandler(initializeHandler)).Methods("GET")
 	r.HandleFunc("/robots.txt", myHandler(robotsHandler))
