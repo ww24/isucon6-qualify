@@ -4,19 +4,21 @@ services:
     image: mysql:5.7.15
     command: mysqld_safe --skip-grant-tables
     ports:
-      - "13306:3306"
+      - "3306"
     volumes:
       - ./mysqldir/var/lib/mysql:/var/lib/mysql
+  web:
+    image: nginx:1.10
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx-local.conf:/etc/nginx/nginx.conf:ro
   isuda:
     image: golang:1.7
     working_dir: /isucon/webapp/go
-    command: go run isuda.go type.go util.go
-    links:
-      - mysql
-      - isutar
-      - isupam
+    command: ../../local/run.sh isuda
     ports:
-      - "5000:5000"
+      - "5000"
     environment:
       - GOPATH=/isucon/webapp/go
       - ISUDA_DB_HOST=mysql
@@ -29,13 +31,9 @@ services:
   isutar:
     image: golang:1.7
     working_dir: /isucon/webapp/go
-    command: go run isutar.go type.go util.go
-    links:
-      - mysql
-      # FIXME: Circular dependency
-      # - isuda
+    command: ../../local/run.sh isutar
     ports:
-      - "5001:5001"
+      - "5001"
     environment:
       - GOPATH=/isucon/webapp/go
       - ISUTAR_DB_HOST=mysql
@@ -49,8 +47,6 @@ services:
     working_dir: /isucon
     command: ./bin/isupam -H 0.0.0.0 -p 5050
     ports:
-      - "5050:5050"
+      - "5050"
     volumes:
       - ../:/isucon
-
-# FIXME: nginx を挟む
