@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"os"
 	"regexp"
@@ -31,7 +33,6 @@ const (
 )
 
 var (
-	isutarEndpoint string
 	isupamEndpoint string
 
 	baseUrl *url.URL
@@ -40,6 +41,8 @@ var (
 	store   *sessions.CookieStore
 
 	errInvalidUser = errors.New("Invalid User")
+
+	prepareEntryPager *sql.Stmt
 )
 
 func setName(w http.ResponseWriter, r *http.Request) error {
@@ -73,9 +76,8 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := db.Exec(`DELETE FROM entry WHERE id > 7101`)
 	panicIf(err)
 
-	resp, err := http.Get(fmt.Sprintf("%s/initialize", isutarEndpoint))
+	_, err = db.Exec("TRUNCATE star")
 	panicIf(err)
-	defer resp.Body.Close()
 
 	re.JSON(w, http.StatusOK, map[string]string{"result": "ok"})
 }
@@ -93,23 +95,35 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	page, _ := strconv.Atoi(p)
 
-	rows, err := db.Query(fmt.Sprintf(
-		"SELECT * FROM entry ORDER BY updated_at DESC LIMIT %d OFFSET %d",
-		perPage, perPage*(page-1),
-	))
+	rows, err := prepareEntryPager.Query(perPage, perPage*(page-1))
 	if err != nil && err != sql.ErrNoRows {
 		panicIf(err)
 	}
+	defer rows.Close()
+
+	keywords := getKeywords()
+	regex := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
+
 	entries := make([]*Entry, 0, 10)
+
+	entryChs := make([]chan Entry, 0, 10)
 	for rows.Next() {
+		entryCh := make(chan Entry, 1)
 		e := Entry{}
-		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+		err = rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
-		e.Html = htmlify(w, r, e.Description)
-		e.Stars = loadStars(e.Keyword)
-		entries = append(entries, &e)
+		go func() {
+			e.Html = htmlify(w, r, e.Description, regex)
+			e.Stars = loadStars(e.Keyword)
+			entryCh <- e
+		}()
+		entryChs = append(entryChs, entryCh)
 	}
-	rows.Close()
+
+	for _, entryCh := range entryChs {
+		entry := <-entryCh
+		entries = append(entries, &entry)
+	}
 
 	var totalEntries int
 	row := db.QueryRow(`SELECT COUNT(*) FROM entry`)
@@ -262,7 +276,10 @@ func keywordByKeywordHandler(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
-	e.Html = htmlify(w, r, e.Description)
+
+	keywords := getKeywords()
+	regex := regexp.MustCompile("(" + strings.Join(keywords, "|") + ")")
+	e.Html = htmlify(w, r, e.Description, regex)
 	e.Stars = loadStars(e.Keyword)
 
 	re.HTML(w, http.StatusOK, "keyword", struct {
@@ -304,36 +321,38 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
+func getKeywords() (keywords []string) {
+	rows, err := db.Query("SELECT keyword FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC")
+	panicIf(err)
+	defer rows.Close()
+
+	keywords = make([]string, 0, 500)
+	for rows.Next() {
+		var keyword string
+		err := rows.Scan(&keyword)
+		panicIf(err)
+		keywords = append(keywords, regexp.QuoteMeta(keyword))
+	}
+
+	return
+}
+
+func htmlify(w http.ResponseWriter, r *http.Request, content string, re *regexp.Regexp) string {
 	if content == "" {
 		return ""
 	}
-	rows, err := db.Query(`
-		SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
-	`)
-	panicIf(err)
-	entries := make([]*Entry, 0, 500)
-	for rows.Next() {
-		e := Entry{}
-		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
-		panicIf(err)
-		entries = append(entries, &e)
-	}
-	rows.Close()
 
-	keywords := make([]string, 0, 500)
-	for _, entry := range entries {
-		keywords = append(keywords, regexp.QuoteMeta(entry.Keyword))
-	}
-	re := regexp.MustCompile("("+strings.Join(keywords, "|")+")")
 	kw2sha := make(map[string]string)
 	content = re.ReplaceAllStringFunc(content, func(kw string) string {
-		kw2sha[kw] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(kw)))
+		if _, ok := kw2sha[kw]; !ok {
+			kw2sha[kw] = "isuda_" + base64.StdEncoding.EncodeToString([]byte(kw)) + "_adusi"
+		}
 		return kw2sha[kw]
 	})
 	content = html.EscapeString(content)
+	base := baseUrl.String() + "/keyword/"
 	for kw, hash := range kw2sha {
-		u, err := r.URL.Parse(baseUrl.String()+"/keyword/" + pathURIEscape(kw))
+		u, err := r.URL.Parse(base + pathURIEscape(kw))
 		panicIf(err)
 		link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(kw))
 		content = strings.Replace(content, hash, link, -1)
@@ -341,19 +360,24 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	return strings.Replace(content, "\n", "<br />\n", -1)
 }
 
-func loadStars(keyword string) []*Star {
-	v := url.Values{}
-	v.Set("keyword", keyword)
-	resp, err := http.Get(fmt.Sprintf("%s/stars", isutarEndpoint) + "?" + v.Encode())
-	panicIf(err)
-	defer resp.Body.Close()
+func loadStars(keyword string) (stars []*Star) {
+	stars = make([]*Star, 0, 10)
 
-	var data struct {
-		Result []*Star `json:result`
+	rows, err := db.Query(`SELECT * FROM star WHERE keyword = ?`, keyword)
+	if err != nil && err != sql.ErrNoRows {
+		panicIf(err)
+		return
 	}
-	err = json.NewDecoder(resp.Body).Decode(&data)
-	panicIf(err)
-	return data.Result
+
+	for rows.Next() {
+		s := Star{}
+		err := rows.Scan(&s.ID, &s.Keyword, &s.UserName, &s.CreatedAt)
+		panicIf(err)
+		stars = append(stars, &s)
+	}
+	rows.Close()
+
+	return stars
 }
 
 func isSpamContents(content string) bool {
@@ -422,10 +446,12 @@ func main() {
 	db.Exec("SET SESSION sql_mode='TRADITIONAL,NO_AUTO_VALUE_ON_ZERO,ONLY_FULL_GROUP_BY'")
 	db.Exec("SET NAMES utf8mb4")
 
-	isutarEndpoint = os.Getenv("ISUTAR_ORIGIN")
-	if isutarEndpoint == "" {
-		isutarEndpoint = "http://localhost:5001"
-	}
+	// migration
+	db.Exec("CREATE TABLE IF NOT EXISTS isuda.star LIKE isutar.star")
+
+	prepareEntryPager, err = db.Prepare("SELECT * FROM entry ORDER BY updated_at DESC LIMIT ? OFFSET ?")
+	panicIf(err)
+
 	isupamEndpoint = os.Getenv("ISUPAM_ORIGIN")
 	if isupamEndpoint == "" {
 		isupamEndpoint = "http://localhost:5050"
@@ -456,6 +482,9 @@ func main() {
 	})
 
 	r := mux.NewRouter()
+	// pprof
+	r.PathPrefix("/debug").Handler(http.DefaultServeMux)
+
 	r.HandleFunc("/", myHandler(topHandler))
 	r.HandleFunc("/initialize", myHandler(initializeHandler)).Methods("GET")
 	r.HandleFunc("/robots.txt", myHandler(robotsHandler))

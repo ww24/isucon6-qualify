@@ -2,6 +2,7 @@
 
 # mariadb
 local/mysqldir/*
+!local/mysqldir/mysqldir.tar.gz
 
 # go
 webapp/go/pkg
